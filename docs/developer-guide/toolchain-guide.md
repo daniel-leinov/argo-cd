@@ -145,6 +145,14 @@ The following steps are required no matter whether you chose to use a virtualize
     DOCKER=podman make start
     ```
 
+!!! note
+    If you use Podman against a registry signed by a private CA, add the CA to
+    Podman's registry trust store:
+    * Rootless: `~/.config/containers/certs.d/<registry>/ca.crt`
+    * Rootful: `/etc/containers/certs.d/<registry>/ca.crt`
+    This avoids `x509: certificate signed by unknown authority` errors when
+    pulling images.
+
 ### Clone the Argo CD repository from your personal fork on GitHub
 
 * `git clone https://github.com/YOUR-USERNAME/argo-cd`
