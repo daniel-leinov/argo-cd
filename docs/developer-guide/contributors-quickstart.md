@@ -60,6 +60,14 @@ Install Go with a version equal to or greater than the version listed in `go.mod
 
 <https://podman.io/docs/installation>
 
+!!! note
+    If Podman pulls from a registry signed by a private CA, add the CA to
+    Podman's registry trust store:
+    * Rootless: `~/.config/containers/certs.d/<registry>/ca.crt`
+    * Rootful: `/etc/containers/certs.d/<registry>/ca.crt`
+    This avoids `x509: certificate signed by unknown authority` errors when
+    pulling images.
+
 ### Install or Upgrade a Tool for Running Local Clusters (e.g. kind or minikube)
 
 #### Installation guide for kind:
