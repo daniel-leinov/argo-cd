@@ -1,0 +1,10 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: my-dashboard
+  labels:
+    app: grafana
+spec:
+  configMapRef:
+    name: PLACEHOLDER
+    key: dashboard.json
