@@ -1,0 +1,314 @@
+# Argo CD Overview Dashboard
+# This dashboard provides a comprehensive view of Argo CD operations and health.
+apiVersion: grafana-dashboards/v1
+kind: GrafanaDashboard
+metadata:
+  name: argocd-overview
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd
+    app.kubernetes.io/component: monitoring
+spec:
+  title: "Argo CD Overview"
+  description: "Overview dashboard for monitoring Argo CD application deployments and sync status"
+  tags:
+    - argocd
+    - gitops
+    - deployments
+  folder: "Argo CD"
+  editable: true
+  refreshInterval: "30s"
+  
+  timeRange:
+    from: "now-6h"
+    to: "now"
+  
+  variables:
+    - name: datasource
+      label: "Data Source"
+      type: datasource
+      datasource: prometheus
+      
+    - name: cluster
+      label: "Cluster"
+      type: query
+      datasource: "$datasource"
+      query: "label_values(argocd_app_info, dest_server)"
+      multi: true
+      includeAll: true
+      allValue: ".*"
+      refresh: 2
+      
+    - name: namespace
+      label: "Namespace"
+      type: query
+      datasource: "$datasource"
+      query: "label_values(argocd_app_info{dest_server=~\"$cluster\"}, dest_namespace)"
+      multi: true
+      includeAll: true
+      allValue: ".*"
+      refresh: 2
+      
+    - name: project
+      label: "Project"
+      type: query
+      datasource: "$datasource"
+      query: "label_values(argocd_app_info, project)"
+      multi: true
+      includeAll: true
+      allValue: ".*"
+      refresh: 2
+      
+    - name: interval
+      label: "Interval"
+      type: interval
+      options:
+        values: ["1m", "5m", "15m", "30m", "1h"]
+        auto: true
+        autoCount: 30
+        autoMin: "10s"
+  
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  
+  resyncPeriod: "10m"
+  
+  rows:
+    - title: "Application Status Overview"
+      collapsed: false
+      panels:
+        - title: "Total Applications"
+          template: stat-count
+          gridPos:
+            w: 4
+            h: 4
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(argocd_app_info{dest_server=~"$cluster", dest_namespace=~"$namespace", project=~"$project"})'
+              legendFormat: "Apps"
+              instant: true
+        
+        - title: "Synced Applications"
+          template: stat-value
+          gridPos:
+            w: 4
+            h: 4
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(argocd_app_info{dest_server=~"$cluster", dest_namespace=~"$namespace", project=~"$project", sync_status="Synced"})'
+              legendFormat: "Synced"
+              instant: true
+          fieldConfig:
+            defaults:
+              color:
+                mode: fixed
+                fixedColor: green
+        
+        - title: "Out of Sync"
+          template: stat-value
+          gridPos:
+            w: 4
+            h: 4
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(argocd_app_info{dest_server=~"$cluster", dest_namespace=~"$namespace", project=~"$project", sync_status="OutOfSync"})'
+              legendFormat: "OutOfSync"
+              instant: true
+          fieldConfig:
+            defaults:
+              color:
+                mode: fixed
+                fixedColor: orange
+        
+        - title: "Healthy Applications"
+          template: stat-value
+          gridPos:
+            w: 4
+            h: 4
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(argocd_app_info{dest_server=~"$cluster", dest_namespace=~"$namespace", project=~"$project", health_status="Healthy"})'
+              legendFormat: "Healthy"
+              instant: true
+          fieldConfig:
+            defaults:
+              color:
+                mode: fixed
+                fixedColor: green
+        
+        - title: "Degraded Applications"
+          template: stat-value
+          gridPos:
+            w: 4
+            h: 4
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(argocd_app_info{dest_server=~"$cluster", dest_namespace=~"$namespace", project=~"$project", health_status="Degraded"}) OR vector(0)'
+              legendFormat: "Degraded"
+              instant: true
+          fieldConfig:
+            defaults:
+              color:
+                mode: fixed
+                fixedColor: red
+        
+        - title: "Progressing Applications"
+          template: stat-value
+          gridPos:
+            w: 4
+            h: 4
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(argocd_app_info{dest_server=~"$cluster", dest_namespace=~"$namespace", project=~"$project", health_status="Progressing"}) OR vector(0)'
+              legendFormat: "Progressing"
+              instant: true
+          fieldConfig:
+            defaults:
+              color:
+                mode: fixed
+                fixedColor: blue
+    
+    - title: "Sync Operations"
+      collapsed: false
+      panels:
+        - title: "Sync Operations Rate"
+          template: timeseries-rate
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'sum(rate(argocd_app_sync_total{dest_server=~"$cluster", dest_namespace=~"$namespace", project=~"$project"}[$interval])) by (phase)'
+              legendFormat: "{{phase}}"
+        
+        - title: "Sync Failures"
+          template: timeseries-basic
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'sum(increase(argocd_app_sync_total{phase="Error", dest_server=~"$cluster", dest_namespace=~"$namespace", project=~"$project"}[$interval])) by (name)'
+              legendFormat: "{{name}}"
+          fieldConfig:
+            defaults:
+              color:
+                mode: fixed
+                fixedColor: red
+              custom:
+                drawStyle: bars
+                fillOpacity: 50
+    
+    - title: "Health & Performance"
+      collapsed: false
+      panels:
+        - title: "Application Health Distribution"
+          type: piechart
+          template: piechart-basic
+          gridPos:
+            w: 8
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(argocd_app_info{dest_server=~"$cluster", dest_namespace=~"$namespace", project=~"$project"}) by (health_status)'
+              legendFormat: "{{health_status}}"
+              instant: true
+        
+        - title: "Sync Status Distribution"
+          type: piechart
+          template: piechart-basic
+          gridPos:
+            w: 8
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(argocd_app_info{dest_server=~"$cluster", dest_namespace=~"$namespace", project=~"$project"}) by (sync_status)'
+              legendFormat: "{{sync_status}}"
+              instant: true
+        
+        - title: "Reconciliation Performance"
+          template: timeseries-duration
+          gridPos:
+            w: 8
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - refId: A
+              expr: 'histogram_quantile(0.50, sum(rate(argocd_app_reconcile_bucket{dest_server=~"$cluster"}[$interval])) by (le))'
+              legendFormat: "p50"
+            - refId: B
+              expr: 'histogram_quantile(0.95, sum(rate(argocd_app_reconcile_bucket{dest_server=~"$cluster"}[$interval])) by (le))'
+              legendFormat: "p95"
+            - refId: C
+              expr: 'histogram_quantile(0.99, sum(rate(argocd_app_reconcile_bucket{dest_server=~"$cluster"}[$interval])) by (le))'
+              legendFormat: "p99"
+    
+    - title: "Repository Server"
+      collapsed: true
+      panels:
+        - title: "Git Requests Rate"
+          template: timeseries-rate
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'sum(rate(argocd_git_request_total[$interval])) by (request_type)'
+              legendFormat: "{{request_type}}"
+        
+        - title: "Git Request Duration"
+          template: timeseries-duration
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'histogram_quantile(0.95, sum(rate(argocd_git_request_duration_seconds_bucket[$interval])) by (le, request_type))'
+              legendFormat: "p95 {{request_type}}"
+    
+    - title: "API Server"
+      collapsed: true
+      panels:
+        - title: "API Request Rate"
+          template: timeseries-rate
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'sum(rate(grpc_server_handled_total{grpc_service=~".*Application.*"}[$interval])) by (grpc_method)'
+              legendFormat: "{{grpc_method}}"
+        
+        - title: "API Request Latency"
+          template: timeseries-duration
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{grpc_service=~".*Application.*"}[$interval])) by (le, grpc_method))'
+              legendFormat: "p95 {{grpc_method}}"
+    
+    - title: "Controller Metrics"
+      collapsed: true
+      panels:
+        - title: "Workqueue Depth"
+          template: timeseries-basic
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'argocd_app_controller_queue_depth'
+              legendFormat: "Queue Depth"
+        
+        - title: "Cluster Cache Memory"
+          template: timeseries-bytes
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'argocd_cluster_info_cache_entries_bytes'
+              legendFormat: "Cache Size"

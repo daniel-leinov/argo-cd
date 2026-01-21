@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Resources are added by referencing generated CR files
+# After running: grafana-dashboard-gen generate -d ../../examples/dashboards -o ../../output
+# Add the CRs here:
+resources:
+  # - ../../output/argocd-overview-cr.yaml
+  # - ../../output/kubernetes-pods-cr.yaml
+
+# Common labels for all dashboards
+commonLabels:
+  app.kubernetes.io/managed-by: grafana-dashboard-gen
+  argocd.argoproj.io/managed: "true"
+
+# Default namespace for all dashboards
+namespace: monitoring
+
+# ConfigMap generator for dashboard metadata (optional)
+# Useful for tracking which dashboards are deployed
+configMapGenerator:
+  - name: grafana-dashboards-metadata
+    literals:
+      - version=1.0.0
+      - last-updated=2024-01-01
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app.kubernetes.io/part-of: grafana-dashboards

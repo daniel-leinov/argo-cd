@@ -1,0 +1,327 @@
+# Kubernetes Pods Dashboard
+# Monitor pod health, resource usage, and restart patterns
+apiVersion: grafana-dashboards/v1
+kind: GrafanaDashboard
+metadata:
+  name: kubernetes-pods
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/component: monitoring
+spec:
+  title: "Kubernetes Pods"
+  description: "Comprehensive pod monitoring - resource usage, restarts, and health"
+  tags:
+    - kubernetes
+    - pods
+    - resources
+  folder: "Kubernetes"
+  editable: true
+  refreshInterval: "30s"
+  
+  timeRange:
+    from: "now-1h"
+    to: "now"
+  
+  variables:
+    - name: datasource
+      label: "Data Source"
+      type: datasource
+      datasource: prometheus
+      
+    - name: cluster
+      label: "Cluster"
+      type: query
+      datasource: "$datasource"
+      query: "label_values(kube_pod_info, cluster)"
+      includeAll: true
+      allValue: ".*"
+      refresh: 2
+      
+    - name: namespace
+      label: "Namespace"
+      type: query
+      datasource: "$datasource"
+      query: "label_values(kube_pod_info{cluster=~\"$cluster\"}, namespace)"
+      multi: true
+      includeAll: true
+      allValue: ".*"
+      refresh: 2
+      
+    - name: pod
+      label: "Pod"
+      type: query
+      datasource: "$datasource"
+      query: "label_values(kube_pod_info{cluster=~\"$cluster\", namespace=~\"$namespace\"}, pod)"
+      multi: true
+      includeAll: true
+      allValue: ".*"
+      refresh: 2
+      
+    - name: interval
+      label: "Interval"
+      type: interval
+      options:
+        values: ["30s", "1m", "5m", "15m", "30m", "1h"]
+        auto: true
+        autoCount: 30
+        autoMin: "10s"
+  
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+  
+  rows:
+    - title: "Overview"
+      collapsed: false
+      panels:
+        - title: "Total Pods"
+          template: stat-count
+          gridPos:
+            w: 4
+            h: 3
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(kube_pod_info{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod"})'
+              instant: true
+        
+        - title: "Running"
+          template: stat-value
+          gridPos:
+            w: 4
+            h: 3
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(kube_pod_status_phase{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", phase="Running"} == 1)'
+              instant: true
+          fieldConfig:
+            defaults:
+              color:
+                mode: fixed
+                fixedColor: green
+        
+        - title: "Pending"
+          template: stat-value
+          gridPos:
+            w: 4
+            h: 3
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(kube_pod_status_phase{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", phase="Pending"} == 1) OR vector(0)'
+              instant: true
+          fieldConfig:
+            defaults:
+              color:
+                mode: fixed
+                fixedColor: yellow
+        
+        - title: "Failed"
+          template: stat-value
+          gridPos:
+            w: 4
+            h: 3
+          datasource: "$datasource"
+          queries:
+            - expr: 'count(kube_pod_status_phase{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", phase="Failed"} == 1) OR vector(0)'
+              instant: true
+          fieldConfig:
+            defaults:
+              color:
+                mode: fixed
+                fixedColor: red
+        
+        - title: "Restarts (24h)"
+          template: stat-count
+          gridPos:
+            w: 4
+            h: 3
+          datasource: "$datasource"
+          queries:
+            - expr: 'sum(increase(kube_pod_container_status_restarts_total{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod"}[24h]))'
+              instant: true
+        
+        - title: "OOM Killed (24h)"
+          template: stat-count
+          gridPos:
+            w: 4
+            h: 3
+          datasource: "$datasource"
+          queries:
+            - expr: 'sum(kube_pod_container_status_last_terminated_reason{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", reason="OOMKilled"}) OR vector(0)'
+              instant: true
+          fieldConfig:
+            defaults:
+              color:
+                mode: fixed
+                fixedColor: red
+    
+    - title: "CPU Usage"
+      collapsed: false
+      panels:
+        - title: "CPU Usage by Pod"
+          template: timeseries-basic
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", container!="", container!="POD"}[$interval])) by (pod)'
+              legendFormat: "{{pod}}"
+          fieldConfig:
+            defaults:
+              unit: cores
+        
+        - title: "CPU Request vs Usage"
+          template: timeseries-basic
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - refId: A
+              expr: 'sum(kube_pod_container_resource_requests{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", resource="cpu"})'
+              legendFormat: "Requested"
+            - refId: B
+              expr: 'sum(kube_pod_container_resource_limits{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", resource="cpu"})'
+              legendFormat: "Limit"
+            - refId: C
+              expr: 'sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", container!="", container!="POD"}[$interval]))'
+              legendFormat: "Usage"
+          fieldConfig:
+            defaults:
+              unit: cores
+              custom:
+                fillOpacity: 10
+    
+    - title: "Memory Usage"
+      collapsed: false
+      panels:
+        - title: "Memory Usage by Pod"
+          template: timeseries-bytes
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'sum(container_memory_working_set_bytes{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", container!="", container!="POD"}) by (pod)'
+              legendFormat: "{{pod}}"
+        
+        - title: "Memory Request vs Usage"
+          template: timeseries-bytes
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - refId: A
+              expr: 'sum(kube_pod_container_resource_requests{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", resource="memory"})'
+              legendFormat: "Requested"
+            - refId: B
+              expr: 'sum(kube_pod_container_resource_limits{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", resource="memory"})'
+              legendFormat: "Limit"
+            - refId: C
+              expr: 'sum(container_memory_working_set_bytes{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod", container!="", container!="POD"})'
+              legendFormat: "Usage"
+    
+    - title: "Network"
+      collapsed: true
+      panels:
+        - title: "Network Received"
+          template: timeseries-basic
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'sum(rate(container_network_receive_bytes_total{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod"}[$interval])) by (pod)'
+              legendFormat: "{{pod}}"
+          fieldConfig:
+            defaults:
+              unit: Bps
+        
+        - title: "Network Transmitted"
+          template: timeseries-basic
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'sum(rate(container_network_transmit_bytes_total{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod"}[$interval])) by (pod)'
+              legendFormat: "{{pod}}"
+          fieldConfig:
+            defaults:
+              unit: Bps
+    
+    - title: "Container Restarts"
+      collapsed: true
+      panels:
+        - title: "Restart Rate"
+          template: timeseries-basic
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'sum(rate(kube_pod_container_status_restarts_total{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod"}[$interval])) by (pod, container)'
+              legendFormat: "{{pod}}/{{container}}"
+          fieldConfig:
+            defaults:
+              color:
+                mode: fixed
+                fixedColor: orange
+              custom:
+                drawStyle: bars
+        
+        - title: "Top Restarting Pods (24h)"
+          type: table
+          template: table-basic
+          gridPos:
+            w: 12
+            h: 8
+          datasource: "$datasource"
+          queries:
+            - expr: 'topk(10, sum(increase(kube_pod_container_status_restarts_total{cluster=~"$cluster", namespace=~"$namespace"}[24h])) by (namespace, pod))'
+              format: table
+              instant: true
+          transformations:
+            - id: organize
+              options:
+                excludeByName:
+                  Time: true
+                renameByName:
+                  namespace: Namespace
+                  pod: Pod
+                  Value: Restarts
+    
+    - title: "Pod Details Table"
+      collapsed: true
+      panels:
+        - title: "Pod Status"
+          type: table
+          template: table-basic
+          gridPos:
+            w: 24
+            h: 10
+          datasource: "$datasource"
+          queries:
+            - expr: 'kube_pod_info{cluster=~"$cluster", namespace=~"$namespace", pod=~"$pod"} * on(pod, namespace) group_left(phase) max(kube_pod_status_phase{phase=~"Running|Pending|Failed|Succeeded"} == 1) by (pod, namespace, phase)'
+              format: table
+              instant: true
+          transformations:
+            - id: organize
+              options:
+                excludeByName:
+                  Time: true
+                  Value: true
+                  __name__: true
+                  cluster: true
+                  created_by_kind: true
+                  created_by_name: true
+                  host_ip: true
+                  host_network: true
+                  uid: true
+                renameByName:
+                  namespace: Namespace
+                  pod: Pod
+                  node: Node
+                  phase: Status
+                  pod_ip: Pod IP

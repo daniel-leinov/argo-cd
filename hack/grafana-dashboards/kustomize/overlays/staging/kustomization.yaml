@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+namespace: monitoring-staging
+
+# Staging-specific labels
+commonLabels:
+  environment: staging
+
+# Patch to target staging Grafana instance
+patches:
+  - target:
+      kind: GrafanaDashboard
+    patch: |-
+      - op: replace
+        path: /spec/instanceSelector
+        value:
+          matchLabels:
+            dashboards: grafana-staging
+      - op: add
+        path: /metadata/annotations
+        value:
+          grafana.dashboard.environment: staging

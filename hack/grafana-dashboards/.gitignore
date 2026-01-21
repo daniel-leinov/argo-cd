@@ -1,0 +1,13 @@
+# Generated files - don't commit output
+output/*.json
+output/*.yaml
+
+# Binary
+grafana-dashboard-gen
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
